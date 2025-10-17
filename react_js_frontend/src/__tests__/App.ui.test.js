@@ -75,6 +75,18 @@ test('clear uses simple confirm and clears state when confirmed', () => {
   window.confirm = originalConfirm;
 });
 
+test('clear confirmation cancel preserves state', () => {
+  const originalConfirm = window.confirm;
+  window.confirm = jest.fn(() => false);
+  render(<App />);
+  pressSequence(['1', '2', '3']);
+  const clear = screen.getByRole('button', { name: /clear/i });
+  fireEvent.click(clear);
+  // Should not clear when user cancels
+  expect(screen.getByTestId('display-value')).toHaveTextContent('123');
+  window.confirm = originalConfirm;
+});
+
 test('accessibility basics: roles and labels', () => {
   render(<App />);
   expect(screen.getByRole('region', { name: /calculator/i })).toBeInTheDocument();

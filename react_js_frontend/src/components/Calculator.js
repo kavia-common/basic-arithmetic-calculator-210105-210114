@@ -149,10 +149,24 @@ export default function Calculator() {
   }, [beforeSnapshot]);
 
   const doClear = useCallback(() => {
-    const confirmed = typeof window !== 'undefined' ? window.confirm('Clear all?') : true;
+    // Optional confirmation should not block in test/CI environments where confirm may be undefined
+    let confirmed = true;
+    try {
+      confirmed = typeof window !== 'undefined' && typeof window.confirm === 'function'
+        ? window.confirm('Clear all?')
+        : true;
+    } catch (e) {
+      // If confirm is blocked by browser policy, proceed with clear
+      confirmed = true;
+    }
     if (!confirmed) return;
-    const afterState = { inputA: '', inputB: '', operator: null };
+
+    // Build the after state reflecting a full reset for audit accuracy
+    const afterState = { inputA: '', inputB: '', operator: null, display: '0', error: '' };
+    // Record CLEAR action prior to mutating local state
     auditClear({ beforeState: beforeSnapshot, afterState });
+
+    // Reset calculator UI state
     resetAll();
   }, [beforeSnapshot, resetAll]);
 

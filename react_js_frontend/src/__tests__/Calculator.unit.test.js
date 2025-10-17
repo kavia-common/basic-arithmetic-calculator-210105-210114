@@ -56,7 +56,7 @@ test('audit: compute, clear, error entries have required fields', () => {
   const before = { inputA: '2', inputB: '2', operator: '+', display: '0', error: '' };
   const deviceId = getDeviceId();
   auditCompute({ beforeState: before, afterState: { result: '4' } });
-  auditClear({ beforeState: before, afterState: {} });
+  auditClear({ beforeState: before, afterState: { inputA: '', inputB: '', operator: null, display: '0', error: '' } });
   auditError({ beforeState: before, afterState: {}, error: 'Divide by zero' });
   const all = getAll();
   expect(all.length).toBe(3);
@@ -65,4 +65,9 @@ test('audit: compute, clear, error entries have required fields', () => {
     expect(new Date(entry.timestamp).toString()).not.toBe('Invalid Date');
     expect(['COMPUTE', 'CLEAR', 'ERROR', 'INPUT', 'OPERATOR']).toContain(entry.action);
   }
+  // Ensure CLEAR entry specifically looks correct
+  const clearEntry = all.find(e => e.action === 'CLEAR');
+  expect(clearEntry).toBeTruthy();
+  expect(clearEntry.before).toEqual(before);
+  expect(clearEntry.after).toEqual({ inputA: '', inputB: '', operator: null, display: '0', error: '' });
 });
