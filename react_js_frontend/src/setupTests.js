@@ -10,3 +10,10 @@ if (typeof window !== 'undefined' && !window.localStorage) {
     clear: () => { Object.keys(store).forEach((k) => delete store[k]); },
   };
 }
+
+// Seed a deterministic deviceId for stable tests
+try {
+  window.localStorage.setItem('calc.deviceId', '00000000-0000-4000-8000-000000000000');
+} catch (e) {
+  // ignore
+}

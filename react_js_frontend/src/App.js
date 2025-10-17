@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import './styles/theme.css';
-import { AuthProvider } from './lib/auth';
 import Calculator from './components/Calculator';
 
 // PUBLIC_INTERFACE
 function App() {
   /**
-   * This is the main application entry component that composes the AuthProvider
-   * with the Calculator UI and manages a user-toggleable light/dark mode.
+   * Main application entry component. Manages a user-toggleable light/dark mode
+   * and renders the Calculator UI.
    */
   const [theme, setTheme] = useState('light');
 
@@ -31,11 +30,9 @@ function App() {
         >
           {theme === 'light' ? '🌙 Dark' : '☀️ Light'}
         </button>
-        <AuthProvider>
-          <main>
-            <Calculator />
-          </main>
-        </AuthProvider>
+        <main>
+          <Calculator />
+        </main>
       </header>
     </div>
   );

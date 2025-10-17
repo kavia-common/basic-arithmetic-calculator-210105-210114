@@ -1,11 +1,14 @@
 import { calculate } from '../components/Calculator';
 import { canAppendDecimal, canCompute, enforceMaxLength, validateDigit, validateOperator } from '../lib/validation';
 import { clear, getAll, auditCompute, auditClear, auditError } from '../lib/audit';
+import { getDeviceId } from '../lib/auth';
 
 beforeEach(() => {
   clear();
   // Clean localStorage audit item too for isolation
   try { localStorage.removeItem('calculator_audit_log_v1'); } catch (e) {}
+  // Ensure deterministic deviceId for tests
+  try { localStorage.setItem('calc.deviceId', '00000000-0000-4000-8000-000000000000'); } catch (e) {}
 });
 
 test('calculate() addition with decimals handles rounding and trimming', () => {
@@ -51,14 +54,15 @@ test('validation: canCompute true only when a,op,b valid', () => {
 
 test('audit: compute, clear, error entries have required fields', () => {
   const before = { inputA: '2', inputB: '2', operator: '+', display: '0', error: '' };
-  auditCompute({ userId: 'user-001', beforeState: before, afterState: { result: '4' }, signature: { verified: true, method: 'pin' } });
-  auditClear({ userId: 'user-001', beforeState: before, afterState: {}, signature: { verified: true, method: 'pin' } });
-  auditError({ userId: 'user-001', beforeState: before, afterState: {}, error: 'Divide by zero' });
+  const deviceId = getDeviceId();
+  auditCompute({ beforeState: before, afterState: { result: '4' } });
+  auditClear({ beforeState: before, afterState: {} });
+  auditError({ beforeState: before, afterState: {}, error: 'Divide by zero' });
   const all = getAll();
   expect(all.length).toBe(3);
   for (const entry of all) {
-    expect(entry.userId).toBeDefined();
+    expect(entry.subjectId).toBe(deviceId);
     expect(new Date(entry.timestamp).toString()).not.toBe('Invalid Date');
-    expect(['UPDATE', 'DELETE', 'READ']).toContain(entry.actionType);
+    expect(['COMPUTE', 'CLEAR', 'ERROR', 'INPUT', 'OPERATOR']).toContain(entry.action);
   }
 });

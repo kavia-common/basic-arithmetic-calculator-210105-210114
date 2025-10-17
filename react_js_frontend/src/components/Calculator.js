@@ -1,7 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import Display from './Display';
 import Keypad from './Keypad';
-import { useAuth } from '../lib/auth';
 import { auditDigit, auditOperator, auditCompute, auditClear, auditError } from '../lib/audit';
 import { validateDigit, validateOperator, canAppendDecimal, enforceMaxLength, canCompute } from '../lib/validation';
 import { safeTry, toUserMessage } from '../lib/errorHandling';
@@ -10,12 +9,13 @@ import { safeTry, toUserMessage } from '../lib/errorHandling';
 // ============================================================================
 // REQUIREMENT TRACEABILITY
 // ============================================================================
-// Requirement ID: REQ-CALC-005
-// User Story: As a user, I can calculate basic arithmetic with validations, audit, and e-sign for critical ops.
-// Acceptance Criteria: All operations, decimals, chaining, backspace, divide-by-zero guard, e-sign for '=' and 'C'.
-// GxP Impact: YES - includes audit trail, validation, and e-signature.
+// Requirement ID: REQ-CALC-005 (Updated)
+// User Story: As a user, I can calculate basic arithmetic with validations and audit,
+//             without authentication or e-signature prompts.
+// Acceptance Criteria: All operations, decimals, chaining, backspace, divide-by-zero guard.
+// GxP Impact: YES - includes audit trail and validation.
 // Risk Level: MEDIUM
-// Validation Protocol: VP-CALC-001
+// Validation Protocol: VP-CALC-ANON-001
 // ============================================================================
 
 /**
@@ -66,70 +66,11 @@ export function calculate(aStr, op, bStr) {
   return asStr;
 }
 
-function EsignModal({ open, onConfirm, onCancel }) {
-  const { user } = useAuth();
-  const [pin, setPin] = useState('');
-  const handleConfirm = () => onConfirm(pin);
-  if (!open) return null;
-  return (
-    <div role="dialog" aria-modal="true" aria-label="Electronic Signature Confirmation" className="esign-overlay">
-      <div className="esign-card card">
-        <h3>Electronic Signature</h3>
-        <p>Please confirm your identity to proceed.</p>
-        <div className="field">
-          <label htmlFor="pin">PIN</label>
-          <input
-            id="pin"
-            name="pin"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            value={pin}
-            onChange={(e) => setPin(e.target.value)}
-            placeholder="Enter PIN"
-            aria-label="PIN"
-          />
-        </div>
-        <div className="actions">
-          <button className="btn" onClick={handleConfirm} aria-label="Confirm signature">
-            Confirm
-          </button>
-          <button className="btn" onClick={onCancel} aria-label="Cancel signature" style={{ background: '#6b7280' }}>
-            Cancel
-          </button>
-        </div>
-        <div className="meta">
-          <span>User: {user?.name} ({user?.id})</span>
-        </div>
-      </div>
-      <style>{`
-        .esign-overlay {
-          position: fixed; inset: 0; background: rgba(17,24,39,0.4);
-          display: flex; align-items: center; justify-content: center; padding: 16px;
-        }
-        .esign-card {
-          width: 100%; max-width: 360px; padding: 16px; text-align: left;
-        }
-        .field { margin: 12px 0; display: flex; flex-direction: column; gap: 6px; }
-        input {
-          border-radius: 10px; border: 1px solid rgba(17,24,39,0.12);
-          padding: 10px 12px; background: var(--color-surface); color: var(--color-text);
-        }
-        input:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-        .actions { display: flex; gap: 8px; margin-top: 8px; }
-        .meta { margin-top: 8px; font-size: 12px; opacity: 0.8; }
-      `}</style>
-    </div>
-  );
-}
-
 // PUBLIC_INTERFACE
 export default function Calculator() {
-  const { user } = useAuth();
   const [state, setState] = useState({ inputA: '', inputB: '', operator: null });
   const [display, setDisplay] = useState('0');
   const [error, setError] = useState('');
-  const [pendingAction, setPendingAction] = useState(null); // 'compute' or 'clear'
-  const [modalOpen, setModalOpen] = useState(false);
 
   const beforeSnapshot = useMemo(
     () => ({ inputA: state.inputA, inputB: state.inputB, operator: state.operator, display, error }),
@@ -151,10 +92,10 @@ export default function Calculator() {
       const next = enforceMaxLength(curr === '0' ? d : curr + d);
       const newState = { ...prev, [targetKey]: next };
       setDisplay(newState.operator ? newState.inputB || newState.inputA || '0' : newState.inputA || '0');
-      auditDigit({ userId: user.id, beforeState: beforeSnapshot, afterState: newState, reason: 'digit' });
+      auditDigit({ beforeState: beforeSnapshot, afterState: newState, reason: 'digit' });
       return newState;
     });
-  }, [user?.id, error, beforeSnapshot]);
+  }, [error, beforeSnapshot]);
 
   const appendDecimal = useCallback(() => {
     setState((prev) => {
@@ -164,10 +105,10 @@ export default function Calculator() {
       const curr = String(prev[targetKey] || '');
       nextState[targetKey] = curr === '' ? '0.' : curr + '.';
       setDisplay(nextState.operator ? nextState.inputB || nextState.inputA || '0' : nextState.inputA || '0');
-      auditDigit({ userId: user.id, beforeState: beforeSnapshot, afterState: nextState, reason: 'decimal' });
+      auditDigit({ beforeState: beforeSnapshot, afterState: nextState, reason: 'decimal' });
       return nextState;
     });
-  }, [user?.id, beforeSnapshot]);
+  }, [beforeSnapshot]);
 
   const chooseOperator = useCallback((op) => {
     if (!validateOperator(op)) return;
@@ -175,25 +116,24 @@ export default function Calculator() {
     setState((prev) => {
       // chaining: if we already have a,b,op and b exists, compute first then set new operator
       if (prev.operator && prev.inputB !== '') {
-        // compute intermediate result
         try {
           const result = calculate(prev.inputA, prev.operator, prev.inputB);
           const chained = { inputA: result, inputB: '', operator: op };
           setDisplay(result);
-          auditOperator({ userId: user.id, beforeState: beforeSnapshot, afterState: chained });
+          auditOperator({ beforeState: beforeSnapshot, afterState: chained });
           return chained;
         } catch (e) {
           const msg = toUserMessage(e?.message || e);
           setError(msg);
-          auditError({ userId: user.id, beforeState: beforeSnapshot, afterState: prev, error: String(e) });
+          auditError({ beforeState: beforeSnapshot, afterState: prev, error: String(e) });
           return prev;
         }
       }
       const next = { ...prev, operator: op };
-      auditOperator({ userId: user.id, beforeState: beforeSnapshot, afterState: next });
+      auditOperator({ beforeState: beforeSnapshot, afterState: next });
       return next;
     });
-  }, [user?.id, error, beforeSnapshot]);
+  }, [error, beforeSnapshot]);
 
   const doBackspace = useCallback(() => {
     setState((prev) => {
@@ -203,51 +143,33 @@ export default function Calculator() {
       const nextVal = curr.slice(0, -1);
       const nextState = { ...prev, [targetKey]: nextVal };
       setDisplay(nextState.operator ? (nextState.inputB || nextState.inputA || '0') : (nextState.inputA || '0'));
-      auditDigit({ userId: user.id, beforeState: beforeSnapshot, afterState: nextState, reason: 'backspace' });
+      auditDigit({ beforeState: beforeSnapshot, afterState: nextState, reason: 'backspace' });
       return nextState;
     });
-  }, [user?.id, beforeSnapshot]);
+  }, [beforeSnapshot]);
 
-  const requestEsign = useCallback((type) => {
-    setPendingAction(type);
-    setModalOpen(true);
-  }, []);
+  const doClear = useCallback(() => {
+    const confirmed = typeof window !== 'undefined' ? window.confirm('Clear all?') : true;
+    if (!confirmed) return;
+    const afterState = { inputA: '', inputB: '', operator: null };
+    auditClear({ beforeState: beforeSnapshot, afterState });
+    resetAll();
+  }, [beforeSnapshot, resetAll]);
 
-  const handleEsignConfirm = useCallback((pin) => {
-    setModalOpen(false);
-    const signature = { verified: pin === user.pin, method: 'pin' };
-    if (!signature.verified) {
-      const msg = 'Invalid PIN';
-      setError(msg);
-      auditError({ userId: user.id, beforeState: beforeSnapshot, afterState: null, error: msg });
-      setPendingAction(null);
-      return;
-    }
-    if (pendingAction === 'compute') {
-      if (!canCompute(state)) return;
-      safeTry(
-        () => {
-          const result = calculate(state.inputA, state.operator, state.inputB);
-          const afterState = { inputA: result, inputB: '', operator: null };
-          setState(afterState);
-          setDisplay(result);
-          auditCompute({ userId: user.id, beforeState: beforeSnapshot, afterState, signature });
-        },
-        (e) => setError(toUserMessage(e?.message || e)),
-        { userId: user.id, beforeState: beforeSnapshot }
-      );
-    } else if (pendingAction === 'clear') {
-      const afterState = { inputA: '', inputB: '', operator: null };
-      auditClear({ userId: user.id, beforeState: beforeSnapshot, afterState, signature });
-      resetAll();
-    }
-    setPendingAction(null);
-  }, [pendingAction, user?.pin, user?.id, state, beforeSnapshot, resetAll]);
-
-  const handleEsignCancel = useCallback(() => {
-    setModalOpen(false);
-    setPendingAction(null);
-  }, []);
+  const doCompute = useCallback(() => {
+    if (!canCompute(state)) return;
+    safeTry(
+      () => {
+        const result = calculate(state.inputA, state.operator, state.inputB);
+        const afterState = { inputA: result, inputB: '', operator: null };
+        setState(afterState);
+        setDisplay(result);
+        auditCompute({ beforeState: beforeSnapshot, afterState });
+      },
+      (e) => setError(toUserMessage(e?.message || e)),
+      { beforeState: beforeSnapshot }
+    );
+  }, [state, beforeSnapshot]);
 
   // PUBLIC_INTERFACE
   const onKeyPress = useCallback((token) => {
@@ -262,13 +184,13 @@ export default function Calculator() {
       case 'BS':
         return doBackspace();
       case 'C':
-        return requestEsign('clear');
+        return doClear();
       case '=':
-        return requestEsign('compute');
+        return doCompute();
       default:
         return null;
     }
-  }, [appendDigit, appendDecimal, chooseOperator, doBackspace, requestEsign]);
+  }, [appendDigit, appendDecimal, chooseOperator, doBackspace, doClear, doCompute]);
 
   return (
     <div className="calculator-wrap">
@@ -277,7 +199,6 @@ export default function Calculator() {
         <Display value={display} error={error} />
         <Keypad onKeyPress={onKeyPress} />
       </div>
-      <EsignModal open={modalOpen} onConfirm={handleEsignConfirm} onCancel={handleEsignCancel} />
       <style>{`
         .calculator-wrap {
           display: flex; align-items: center; justify-content: center;
